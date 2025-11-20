@@ -39,12 +39,12 @@ onMounted(() => {
   const christmasTree = new ChristmasTree(sceneManager.scene, params)
 
   // 创建控制面板，并设置各种参数变化时的回调函数
-  new Controls(params, renderer, sceneManager, {
-    onTreeUpdate: () => christmasTree.createTree(),        // 树参数变化时重新创建树
-    onStarUpdate: () => christmasTree.loadStar(),         // 星星参数变化时重新加载星星
-    onParticleSize: () => (christmasTree.points.material.size = params.粒子大小),  // 更新粒子大小
-    onOpacityChange: () => (christmasTree.points.material.opacity = params.透明度)  // 更新透明度
-  })
+  // new Controls(params, renderer, sceneManager, {
+  //   onTreeUpdate: () => christmasTree.createTree(),        // 树参数变化时重新创建树
+  //   onStarUpdate: () => christmasTree.loadStar(),         // 星星参数变化时重新加载星星
+  //   onParticleSize: () => (christmasTree.points.material.size = params.粒子大小),  // 更新粒子大小
+  //   onOpacityChange: () => (christmasTree.points.material.opacity = params.透明度)  // 更新透明度
+  // })
 
   // 定义动画循环函数
   const animate = () => {
@@ -66,13 +66,37 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="canvas-container"
-    ref="container"
-  ></div>
+  <div>
+    <div class="left-message">Merry Christmas</div>
+    <div
+      class="canvas-container"
+      ref="container"
+    ></div>
+  </div>
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
+
+.left-message {
+  position: fixed;
+  left: 40px;
+  top: 20%;
+  transform: translateY(-20%);
+  color: #ffeef6;
+  font-family: 'Great Vibes', cursive;
+  font-size: 64px;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(255, 182, 193, 0.6), 0 0 16px rgba(255, 105, 180, 0.18);
+  -webkit-font-smoothing: antialiased;
+  z-index: 10;
+  pointer-events: none; /* 不阻挡鼠标 */
+}
+
+.left-message.small {
+  font-size: 40px;
+}
+
 .canvas-container {
   width: 100vw;
   height: 100vh;

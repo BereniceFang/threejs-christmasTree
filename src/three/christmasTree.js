@@ -35,6 +35,7 @@ export class ChristmasTree {
 
     this.createTree()
     this.createGround()
+    this.createSnow()
     this.loadStar()
   }
 
@@ -313,6 +314,81 @@ export class ChristmasTree {
   }
 
   /**
+   * 创建雪花粒子系统
+   */
+  createSnow() {
+    // 如果已有雪粒子，先移除
+    const old = this.scene.children.find((c) => c.name === 'snow')
+    if (old) this.scene.remove(old)
+
+    const snowCount = 800
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(snowCount * 3)
+
+    // 存储每个雪花的下落速度与抖动幅度（CPU 更新）
+    this.snowSpeeds = new Float32Array(snowCount)
+    this.snowDrifts = new Float32Array(snowCount)
+
+    for (let i = 0; i < snowCount; i++) {
+      const i3 = i * 3
+      // 在场景上方随机散布 (范围可根据场景缩放调整)
+      positions[i3] = (Math.random() - 0.5) * 20
+      positions[i3 + 1] = Math.random() * 10 + 2
+      positions[i3 + 2] = (Math.random() - 0.5) * 20
+
+      // 下落速度与水平抖动幅度
+      this.snowSpeeds[i] = 0.01 + Math.random() * 0.06
+      this.snowDrifts[i] = Math.random() * 0.02
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+    const material = new THREE.PointsMaterial({
+      size: 0.12,
+      map: this.particleTexture,
+      transparent: true,
+      opacity: 0.95,
+      color: 0xffffff,
+      depthWrite: false,
+      blending: THREE.NormalBlending
+    })
+
+    this.snowParticles = new THREE.Points(geometry, material)
+    this.snowParticles.name = 'snow'
+    this.scene.add(this.snowParticles)
+  }
+
+  /**
+   * 更新雪花位置（简单 CPU 逐帧更新）
+   */
+  updateSnow() {
+    if (!this.snowParticles) return
+
+    const positions = this.snowParticles.geometry.attributes.position.array
+    const count = positions.length / 3
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3
+
+      // 垂直下落
+      positions[i3 + 1] -= this.snowSpeeds[i]
+
+      // 水平随时间轻微摆动
+      positions[i3] += Math.sin(this.time * 0.5 + i) * this.snowDrifts[i]
+      positions[i3 + 2] += Math.cos(this.time * 0.45 + i * 0.7) * this.snowDrifts[i] * 0.6
+
+      // 重置到顶部
+      if (positions[i3 + 1] < -0.5) {
+        positions[i3] = (Math.random() - 0.5) * 20
+        positions[i3 + 1] = Math.random() * 6 + 6
+        positions[i3 + 2] = (Math.random() - 0.5) * 20
+      }
+    }
+
+    this.snowParticles.geometry.attributes.position.needsUpdate = true
+  }
+
+  /**
    * 创建一个新的落下的星星
    */
   createFallingStar() {
@@ -393,27 +469,30 @@ export class ChristmasTree {
     }
 
     // 每隔一定时间创建新的星星
-    if (this.time - this.lastStarTime > 0.1) {
-      // 每0.1秒创建一个新星星，增加生成频率
-      this.createFallingStar()
-      this.lastStarTime = this.time
-    }
+    // if (this.time - this.lastStarTime > 0.1) {
+    //   // 每0.1秒创建一个新星星，增加生成频率
+    //   this.createFallingStar()
+    //   this.lastStarTime = this.time
+    // }
 
     // 更新落下的星星
-    this.fallingStars = this.fallingStars.filter((star) => {
-      if (!star.material.uniforms) return false
+    // this.fallingStars = this.fallingStars.filter((star) => {
+    //   if (!star.material.uniforms) return false
 
-      const lifetime = this.time - star.startTime
-      star.material.uniforms.time.value = this.time
-      star.geometry.attributes.lifetime.array[0] = lifetime
-      star.geometry.attributes.lifetime.needsUpdate = true
+    //   const lifetime = this.time - star.startTime
+    //   star.material.uniforms.time.value = this.time
+    //   star.geometry.attributes.lifetime.array[0] = lifetime
+    //   star.geometry.attributes.lifetime.needsUpdate = true
 
-      // 如果生命周期超过4秒，移除星星
-      if (lifetime > 6.0) {
-        this.scene.remove(star)
-        return false
-      }
-      return true
-    })
+    //   // 如果生命周期超过4秒，移除星星
+    //   if (lifetime > 6.0) {
+    //     this.scene.remove(star)
+    //     return false
+    //   }
+    //   return true
+    // })
+
+    // 更新雪花
+    this.updateSnow()
   }
 }
