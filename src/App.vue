@@ -1,9 +1,8 @@
 <script setup>
-import ChristmasTree from './components/ChristmasTree.vue'
 </script>
 
 <template>
-  <ChristmasTree />
+  <router-view />
 </template>
 
 <style scoped></style>
