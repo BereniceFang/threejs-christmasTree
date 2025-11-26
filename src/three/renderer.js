@@ -23,7 +23,8 @@ export class Renderer {
     // 设置渲染器尺寸为窗口大小
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.0
+  // 降低总体曝光，避免 bloom 过曝遮盖细节
+  this.renderer.toneMappingExposure = 0.6
     // 将渲染器的canvas元素添加到容器中
     container.appendChild(this.renderer.domElement)
 
@@ -44,7 +45,11 @@ export class Renderer {
     this.renderPass = new RenderPass(scene, camera)
 
     // 创建泛光通道
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.后期处理.发光强度, params.后期处理.发光半径, params.后期处理.发光阈值)
+    // 使用更保守的默认值，避免过曝淹没粒子细节
+    const bloomStrength = (params && params.后期处理 && typeof params.后期处理.发光强度 === 'number') ? params.后期处理.发光强度 : 0.28
+    const bloomRadius = (params && params.后期处理 && typeof params.后期处理.发光半径 === 'number') ? params.后期处理.发光半径 : 0.35
+    const bloomThreshold = (params && params.后期处理 && typeof params.后期处理.发光阈值 === 'number') ? params.后期处理.发光阈值 : 0.0
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), bloomStrength, bloomRadius, bloomThreshold)
 
     // 创建输出通道
     this.outputPass = new OutputPass()

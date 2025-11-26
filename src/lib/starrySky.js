@@ -245,9 +245,11 @@ export function init(container) {
   varying float vRange;
   varying float vRand;
   varying vec3 vColor;
+  varying vec3 vWorldPos;
     void main() {
       float flick = 0.78 + 0.30 * sin(uTime * (0.25 + aRandom * 1.6) + aRandom * 7.0);
       vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         float dist = length(mvPos.xyz) + 0.0001;
         // larger base scale for cloud so it reads when close
   float scale = clamp(220.0 / dist, 0.7, 12.0);
@@ -263,10 +265,14 @@ export function init(container) {
     uniform sampler2D map;
     uniform float opacity;
     uniform float uMinOpacity;
+    uniform vec3 uCameraPos;
+    uniform float uNearRadius;
+    uniform float uNearBoost;
     varying float vFlick;
     varying float vRange;
     varying float vRand;
     varying vec3 vColor;
+    varying vec3 vWorldPos;
     void main() {
       vec4 tex = texture2D(map, gl_PointCoord);
       // subtle tint variation for cloud microstructure
@@ -276,15 +282,21 @@ export function init(container) {
       float vb = clamp(vRange / 3.0, 0.8, 2.2);
       float viewBoost = mix(1.0, vb, 0.42);
       raw *= viewBoost;
+      // near-camera boost: increase raw when camera is within uNearRadius
+      float d = length(uCameraPos - vWorldPos);
+      float nearFactor = clamp(1.0 - d / uNearRadius, 0.0, 1.0);
+      // smooth the nearFactor for gentle falloff
+      nearFactor = pow(nearFactor, 0.9);
+      raw *= (1.0 + nearFactor * uNearBoost);
       // reduce alpha compression exponent to brighten overall cloud
-      float a = clamp(pow(raw, 1.30), 0.0, 0.90);
+      float a = clamp(pow(raw, 1.30), 0.0, 0.92);
       a = max(a, uMinOpacity * opacity);
       vec3 col = tex.rgb * vColor * tint;
       gl_FragColor = vec4(col, a);
     }
   `
   const cloudMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, map: { value: cloudTex }, opacity: { value: 0.44 }, uMinOpacity: { value: 0.14 } },
+    uniforms: { uTime: { value: 0 }, map: { value: cloudTex }, opacity: { value: 0.44 }, uMinOpacity: { value: 0.14 }, uCameraPos: { value: new THREE.Vector3() }, uNearRadius: { value: 220.0 }, uNearBoost: { value: 1.45 } },
     vertexShader: cloudVert,
     fragmentShader: cloudFrag,
     transparent: true,
@@ -338,9 +350,11 @@ export function init(container) {
   varying float vRange;
   varying float vRand;
   varying vec3 vColor;
+  varying vec3 vWorldPos;
     void main() {
       float flick = 0.8 + 0.34 * sin(uTime * (0.6 + aRandom * 1.9) + aRandom * 9.0);
       vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         float dist = length(mvPos.xyz) + 0.0001;
   float scale = clamp(180.0 / dist, 0.6, 8.0);
         float flickScale = clamp(pow(180.0 / dist, 0.13), 0.85, 2.4);
@@ -355,10 +369,14 @@ export function init(container) {
     uniform sampler2D map;
     uniform float opacity;
     uniform float uMinOpacity;
+    uniform vec3 uCameraPos;
+    uniform float uNearRadius;
+    uniform float uNearBoost;
     varying float vFlick;
     varying float vRange;
     varying float vRand;
     varying vec3 vColor;
+    varying vec3 vWorldPos;
     void main() {
       vec4 tex = texture2D(map, gl_PointCoord);
       vec3 tint = mix(vec3(0.97,0.94,1.0), vec3(0.88,0.9,0.98), vRand);
@@ -366,6 +384,11 @@ export function init(container) {
       float vb = clamp(vRange / 3.0, 0.85, 2.2);
       float viewBoost = mix(1.0, vb, 0.40);
       raw *= viewBoost;
+      // near-camera boost for micro layers
+      float d = length(uCameraPos - vWorldPos);
+      float nearFactor = clamp(1.0 - d / uNearRadius, 0.0, 1.0);
+      nearFactor = pow(nearFactor, 0.9);
+      raw *= (1.0 + nearFactor * uNearBoost);
       float a = clamp(pow(raw, 1.35), 0.0, 0.82);
       a = max(a, uMinOpacity * opacity);
       vec3 col = tex.rgb * vColor * tint;
@@ -373,7 +396,7 @@ export function init(container) {
     }
   `
   const microMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, map: { value: microTex }, opacity: { value: 0.46 }, uMinOpacity: { value: 0.09 } },
+    uniforms: { uTime: { value: 0 }, map: { value: microTex }, opacity: { value: 0.46 }, uMinOpacity: { value: 0.09 }, uCameraPos: { value: new THREE.Vector3() }, uNearRadius: { value: 180.0 }, uNearBoost: { value: 1.6 } },
     vertexShader: microVert,
     fragmentShader: microFrag,
     transparent: true,
@@ -480,7 +503,7 @@ export function init(container) {
   resources.geometries.push(microCoreG)
   const microCoreTex = createSprite(64, 'rgba(180,190,255,1)')
   const microCoreMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, map: { value: microCoreTex }, opacity: { value: 0.58 }, uMinOpacity: { value: 0.12 } },
+    uniforms: { uTime: { value: 0 }, map: { value: microCoreTex }, opacity: { value: 0.58 }, uMinOpacity: { value: 0.12 }, uCameraPos: { value: new THREE.Vector3() }, uNearRadius: { value: 120.0 }, uNearBoost: { value: 2.0 } },
     vertexShader: microVert,
     fragmentShader: microFrag,
     transparent: true,
@@ -590,6 +613,16 @@ export function init(container) {
     } catch (e) {}
     try {
       if (typeof filament !== 'undefined' && filament.material && filament.material.uniforms && filament.material.uniforms.uTime) filament.material.uniforms.uTime.value = t
+    } catch (e) {}
+    // update camera position uniforms for near-boosting cloud layers
+    try {
+      if (cloud.material && cloud.material.uniforms && cloud.material.uniforms.uCameraPos) cloud.material.uniforms.uCameraPos.value.copy(camera.position)
+    } catch (e) {}
+    try {
+      if (microCloud.material && microCloud.material.uniforms && microCloud.material.uniforms.uCameraPos) microCloud.material.uniforms.uCameraPos.value.copy(camera.position)
+    } catch (e) {}
+    try {
+      if (typeof microCore !== 'undefined' && microCore.material && microCore.material.uniforms && microCore.material.uniforms.uCameraPos) microCore.material.uniforms.uCameraPos.value.copy(camera.position)
     } catch (e) {}
     // much slower rotation to make the galaxy feel tranquil
     cloudGroup.rotation.y += 0.00028
