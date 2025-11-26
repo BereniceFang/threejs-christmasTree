@@ -67,12 +67,11 @@ onMounted(() => {
 
 <template>
   <div>
-    <div class="left-message">Merry Christmas</div>
+    <div class="left-message">🍀Merry Christmas🍀</div>
     <div
       class="canvas-container"
       ref="container"
     ></div>
-    <div class="corner-message">木头木兮圣诞快乐🍀</div>
   </div>
 </template>
 
@@ -108,24 +107,7 @@ onMounted(() => {
   background: #000;
 }
 
-.corner-message {
-  position: fixed;
-  right: 32px;
-  bottom: 28px;
-  color: #ffffff;
-  font-family: 'Playfair Display', serif;
-  font-size: 40px;
-  background: rgba(0,0,0,0.25);
-  padding: 8px 12px;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 0 10px rgba(255,255,255,0.03) inset;
-  text-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
-  z-index: 11;
-  pointer-events: none;
-}
-
 @media (max-width: 600px) {
   .left-message { font-size: 36px; left: 16px; }
-  .corner-message { font-size: 36px; right: 12px; bottom: 12px; }
 }
 </style>
