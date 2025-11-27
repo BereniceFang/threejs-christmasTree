@@ -1,8 +1,9 @@
 <template>
   <div class="firework-root" ref="container">
     <div class="ui">
-      <button @click="startShow">开始烟花</button>
-      <button @click="stopShow">停止</button>
+        <button @click="startShow">开始烟花</button>
+        <button @click="stopShow">停止</button>
+        <button @click="launchBicolorManual">双色烟花</button>
     </div>
   </div>
 </template>
@@ -17,6 +18,15 @@ let rockets = [] // ascending sparks
 let particles = [] // explosion particles
 let rafId = null
 let running = true
+
+// Predefined bi-color palettes (inner, outer)
+const BI_COLOR_PALETTES = [
+  [ new THREE.Color(0x3aa0ff), new THREE.Color(0xff9a3a) ], // blue / orange
+  [ new THREE.Color(0x9fe6a5), new THREE.Color(0xffd36b) ], // pale green / warm yellow
+  [ new THREE.Color(0xff6bcb), new THREE.Color(0x6bffb8) ], // pink / mint
+  [ new THREE.Color(0x8cc9ff), new THREE.Color(0xff8b6b) ], // light blue / coral
+  [ new THREE.Color(0xd8a6ff), new THREE.Color(0xffe08a) ]  // lavender / soft gold
+]
 
 function rand(min, max) { return Math.random() * (max - min) + min }
 // create a circular texture for particles
@@ -46,10 +56,16 @@ class FireworkParticle {
     const speed = opts.speed ?? rand(80, 420)
     this.color = opts.color ?? new THREE.Color().setHSL(Math.random(), 0.85, 0.45)
     this.shape = opts.shape || null
+    // optional: if caller provides a direction vector, use it
+    this.makeTrail = opts.makeTrail || false
+    this.trailTimer = 0
   // spherical coordinates: theta (azimuth) and phi (polar)
   const theta = rand(0, Math.PI * 2)
   const phi = Math.acos(rand(-1,1))
-  const dir = new THREE.Vector3(Math.cos(theta) * Math.sin(phi), Math.cos(phi), Math.sin(theta) * Math.sin(phi))
+  let dir = new THREE.Vector3(Math.cos(theta) * Math.sin(phi), Math.cos(phi), Math.sin(theta) * Math.sin(phi))
+    if (opts.dir && opts.dir.isVector3) {
+      dir = opts.dir.clone().normalize()
+    }
     this.velocity = dir.multiplyScalar(speed)
     this.life = opts.life ?? rand(1.2, 2.8)
     this.age = 0
@@ -114,6 +130,17 @@ class FireworkParticle {
     this.velocity.y -= 200 * dt
     this.velocity.multiplyScalar(0.995)
     this.position.addScaledVector(this.velocity, dt)
+    // optional trail spawning for fast streak-like particles
+    if (this.makeTrail) {
+      this.trailTimer += dt
+      if (this.trailTimer > 0.02) {
+        this.trailTimer = 0
+        try {
+          const t = new TrailParticle(this.position, this.color)
+          particles.push(t)
+        } catch (e) {}
+      }
+    }
     const t = this.age / this.life
     this.material.opacity = Math.max(0, 1 - t * 1.1)
     this.geometry.attributes.position.array[0] = this.position.x
@@ -243,6 +270,10 @@ function explode(position, color, shape = null) {
   // standard explosion
   if (shape === 'clover') {
     explodeClover(position, color, count)
+    return
+  }
+  if (shape === 'bicolor') {
+    explodeBicolor(position, color, count)
     return
   }
   for (let i = 0; i < count; i++) {
@@ -388,6 +419,72 @@ function explodeClover(position, color, count) {
   }
 }
 
+function explodeBicolor(position, color, count) {
+  // Create an inner core and an outer ring with different colors.
+  // Determine split ratio: proportion of particles in the inner core.
+  const innerRatio = 0.28 // ~28% particles in the bright core
+  const innerCount = Math.max(8, Math.floor(count * innerRatio))
+  const outerCount = Math.max(8, count - innerCount)
+
+  // pick a random palette and optionally flip it to increase variety
+  const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+  let innerColor = pal[0].clone()
+  let outerColor = pal[1].clone()
+  if (Math.random() < 0.22) { // ~22% chance to flip inner/outer
+    const tmp = innerColor; innerColor = outerColor; outerColor = tmp
+  }
+  // slight random perturbation to hue/brightness for organic variation
+  innerColor.offsetHSL(rand(-0.02, 0.02), rand(-0.04, 0.04), rand(-0.06, 0.06))
+  outerColor.offsetHSL(rand(-0.02, 0.02), rand(-0.04, 0.04), rand(-0.06, 0.06))
+  innerColor.multiplyScalar(1.5)
+
+  // localized flash uses the inner color for perceived brightness
+  try { localFlash(position, innerColor, Math.min(0.96, 0.2 + count / 420), 260, count) } catch(e) {}
+
+  // inner particles: compact, slower and smaller (half-size overall)
+  for (let i = 0; i < innerCount; i++) {
+    const speed = rand(5, 60)
+    const life = rand(0.6, 1.2)
+    const size = rand(1.6, 2.8)
+    const p = new FireworkParticle(position, innerColor, { size, life, speed })
+    particles.push(p)
+  }
+
+  // outer particles: generate directional spikes (streaks) to match attachment image.
+  // create several long spikes; each spike will spawn a stream of trail particles
+  // increase number of long spikes (more, thinner rays)
+  const spikeCount = Math.max(20, Math.floor(outerCount / 4))
+  for (let s = 0; s < spikeCount; s++) {
+    const angle = (s / spikeCount) * Math.PI * 2 + rand(-0.06, 0.06)
+    const dir = new THREE.Vector3(Math.cos(angle), Math.sin(angle) * 0.9 + rand(-0.12, 0.12), Math.sin(angle) * rand(-0.08,0.08)).normalize()
+    const spikesPer = Math.max(2, Math.floor(outerCount / spikeCount))
+    for (let k = 0; k < spikesPer; k++) {
+      // reduce speed & size roughly by half to shrink overall visual scale
+      const speed = rand(120, 390)
+      const life = rand(0.45, 0.9)
+      const size = rand(0.6, 1.3)
+      const p = new FireworkParticle(position, outerColor, { size, life, speed, dir, makeTrail: true })
+      particles.push(p)
+    }
+  }
+}
+
+function launchBicolorManual() {
+  const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
+  // pick a random palette for the manual launcher so it shows variety
+  const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+  const baseColor = pal[0].clone()
+  const r = new Rocket(x, { color: baseColor, shape: 'bicolor' })
+  rockets.push(r)
+}
+
+function launchBicolor(x) {
+  const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+  const baseColor = pal[0].clone()
+  const r = new Rocket(x, { color: baseColor, shape: 'bicolor' })
+  rockets.push(r)
+}
+
 // end explode
 
 function localFlash(worldPos, color, intensity = 0.6, duration = 200, count = 120) {
@@ -482,10 +579,15 @@ function startShow() {
   // spawn rockets regularly
   spawnInterval = setInterval(() => {
     const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
-    // ~1.5% chance to auto-trigger the pale-green clover easter-egg
-    if (Math.random() < 0.05) {
+    const r = Math.random()
+    if (r < 0.3) {
+      // 30% chance: bicolor
+      launchBicolor(x)
+    } else if (r < 0.35) {
+      // 5% chance: clover
       launchClover()
     } else {
+      // otherwise normal rocket
       launchRocket(x)
     }
   }, 700)
