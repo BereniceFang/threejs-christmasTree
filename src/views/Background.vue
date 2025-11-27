@@ -8,6 +8,7 @@
     <main class="bg-list">
       <router-link class="bg-item" to="/tree">圣诞树 (Christmas Tree)</router-link>
       <router-link class="bg-item" to="/starry">星空 (Starry Sky)</router-link>
+        <router-link class="bg-item" to="/background/firework">烟花 (Firework)</router-link>
     </main>
   </div>
 </template>

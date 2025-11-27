@@ -4,6 +4,7 @@ const router = useRouter()
 const goTree = () => router.push({ name: 'ChristmasTree' })
 const goBackground = () => router.push({ name: 'Background' })
 const goStarry = () => router.push({ name: 'StarrySky' })
+const goFirework = () => router.push({ name: 'Firework' })
 </script>
 
 <template>
@@ -17,6 +18,7 @@ const goStarry = () => router.push({ name: 'StarrySky' })
       <div class="button-row">
         <button class="primary" @click="goTree">Christmas Tree</button>
         <button class="primary outline" @click="goStarry">Starry Sky</button>
+        <button class="primary outline" @click="goFirework">Firework</button>
       </div>
     </main>
 
