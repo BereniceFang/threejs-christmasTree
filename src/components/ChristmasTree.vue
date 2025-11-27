@@ -13,8 +13,8 @@ onMounted(() => {
     粒子数量: 5000,      // 控制圣诞树粒子的数量
     粒子大小: 0.05,      // 控制单个粒子的大小
     闪耀大小: 0.7,       // 控制粒子的闪耀效果大小
-    树高: 5,            // 控制圣诞树的高度
-    树宽: 2,            // 控制圣诞树的宽度
+  树高: 12,           // 控制圣诞树的高度（放大）
+  树宽: 4,            // 控制圣诞树的宽度（放大）
     旋转速度: 0.002,     // 控制圣诞树的旋转速度
     透明度: 0.8,        // 控制粒子的透明度
     星星大小: 0.2,       // 控制顶部星星的大小
@@ -37,6 +37,27 @@ onMounted(() => {
 
   // 创建圣诞树实例
   const christmasTree = new ChristmasTree(sceneManager.scene, params)
+
+  // 调整相机位置与控制器目标，使树在视口中占据更大比例
+  // 将相机拉近以匹配树的尺寸范围（树高通常在 few units），让画面更饱满
+  try {
+  // compute camera distance so that the tree occupies ~80% of viewport height
+  const treeHeight = params.树高 || 12
+  const fov = sceneManager.camera.fov * (Math.PI / 180)
+  // visible world height at distance d is: 2 * d * tan(fov/2)
+  // we want treeHeight = 0.8 * visibleHeight => d = treeHeight / (2 * tan(fov/2) * 0.8)
+  const desiredVisibleRatio = 0.8
+  const distance = treeHeight / (2 * Math.tan(fov / 2) * desiredVisibleRatio)
+  // place camera on z axis and slightly above center to frame tree nicely
+  sceneManager.camera.position.set(0, treeHeight * 1.2, distance)
+  sceneManager.camera.lookAt(0, treeHeight * 0.45, 0)
+  sceneManager.controls.target.set(0, treeHeight * 0.45, 0)
+    // 触发一次 resize 以确保渲染器/后期处理使用新的尺寸
+    sceneManager.handleResize()
+    renderer.handleResize()
+  } catch (e) {
+    // ignore if controls or camera not ready
+  }
 
   // 创建控制面板，并设置各种参数变化时的回调函数
   // new Controls(params, renderer, sceneManager, {
@@ -82,11 +103,11 @@ onMounted(() => {
 .left-message {
   position: fixed;
   left: 40px;
-  top: 20%;
+  top: 15%;
   transform: translateY(-20%);
   color: #ffeef6;
   font-family: 'Great Vibes', cursive;
-  font-size: 64px;
+  font-size: 44px;
   letter-spacing: 1px;
   text-shadow: 0 0 8px rgba(255, 182, 193, 0.6), 0 0 16px rgba(255, 105, 180, 0.18);
   -webkit-font-smoothing: antialiased;
@@ -95,7 +116,7 @@ onMounted(() => {
 }
 
 .left-message.small {
-  font-size: 40px;
+  font-size: 30px;
 }
 
 .canvas-container {

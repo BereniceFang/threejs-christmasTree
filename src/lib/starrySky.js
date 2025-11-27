@@ -58,7 +58,7 @@ export function init(container) {
 
   // Stars (large spherical background so camera always inside star field)
   // increase star density to make the background feel richer
-  const starCount = 34000
+  const starCount = 60000
   const positions = new Float32Array(starCount * 3)
   for (let i = 0; i < starCount; i++) {
     const phi = Math.acos(2 * Math.random() - 1)
@@ -74,38 +74,48 @@ export function init(container) {
   // per-star randomness for subtle twinkle
   const starRand = new Float32Array(starCount)
   const starSize = new Float32Array(starCount)
+  // per-star base brightness (0.6..1.8) to vary intrinsic luminance
+  const starBrightness = new Float32Array(starCount)
   for (let i = 0; i < starCount; i++) {
     starRand[i] = Math.random()
-  // slightly larger base size so stars are more visible
-  starSize[i] = 2.6 + Math.random() * 2.8
+    // slightly larger base size so stars are more visible
+    starSize[i] = 2.6 + Math.random() * 2.8
+    // bias brightness: most stars dim, a few very bright
+    starBrightness[i] = 0.6 + Math.pow(Math.random(), 2.2) * 1.6
   }
   geom.setAttribute('aRandom', new THREE.BufferAttribute(starRand, 1))
   geom.setAttribute('aSize', new THREE.BufferAttribute(starSize, 1))
+  geom.setAttribute('aBrightness', new THREE.BufferAttribute(starBrightness, 1))
   resources.geometries.push(geom)
   const starTex = createSprite(64, '#ffffff')
   // star shader: subtle per-particle flicker driven by uTime and per-vertex randomness
   const starVert = `
   attribute float aRandom;
   attribute float aSize;
+  attribute float aBrightness;
   uniform float uTime;
   varying float vAlpha;
   varying float vRange;
   varying float vRand;
+  varying float vBright;
     void main() {
-      float flick = 0.85 + 0.22 * sin(uTime * (0.5 + aRandom * 1.8) + aRandom * 12.0);
+      // slower, lower-frequency twinkle driven by uTime and per-vertex randomness
+      float slowFreq = 0.08 + aRandom * 0.12;
+      float flick = 0.9 + 0.35 * sin(uTime * slowFreq + aRandom * 6.2831);
       vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
         // use full 3D distance so side proximity also increases visibility
         float dist = length(mvPos.xyz) + 0.0001;
         // scale points by view distance so items remain visible when zoomed in
-  float scale = clamp(160.0 / dist, 0.6, 10.0);
+  float scale = clamp(160.0 / dist, 0.6, 12.0);
         // slightly reduce flick amplitude at extreme distances
-        float flickScale = clamp(pow(160.0 / dist, 0.12), 0.85, 2.6);
+        float flickScale = clamp(pow(160.0 / dist, 0.12), 0.7, 3.0);
   vAlpha = flick * flickScale;
   vRand = aRandom;
   vRange = scale;
+  vBright = aBrightness;
       gl_Position = projectionMatrix * mvPos;
-      // size attenuation: scale by aSize, view scale, and a mild flicker
-      gl_PointSize = aSize * scale * (1.0 + 0.25 * sin(uTime * (0.6 + aRandom * 1.5) + aRandom * 5.0));
+      // size attenuation: scale by aSize, view scale, and a mild slow flicker
+      gl_PointSize = aSize * scale * (1.0 + 0.18 * sin(uTime * (0.12 + aRandom * 0.18) + aRandom * 3.0));
     }
   `
   const starFrag = `
@@ -115,6 +125,7 @@ export function init(container) {
     varying float vAlpha;
     varying float vRange;
     varying float vRand;
+    varying float vBright;
     void main() {
       vec4 tex = texture2D(map, gl_PointCoord);
       // subtle tint variation per-star
@@ -123,10 +134,13 @@ export function init(container) {
   float raw = tex.a * vAlpha * opacity;
   float vb = clamp(vRange / 3.0, 0.7, 3.5);
   float viewBoost = mix(1.0, vb, 0.45);
-  raw *= viewBoost;
-  float a = clamp(pow(raw, 1.05), 0.0, 0.96);
+  raw *= viewBoost * vBright; // apply per-star base brightness
+  // apply a slight slow modulation to alpha for extra twinkle subtlety
+  float slow = 0.9 + 0.15 * sin(uTime * (0.05 + vRand * 0.08) + vRand * 2.0);
+  raw *= slow;
+  float a = clamp(pow(raw, 1.05), 0.0, 0.98);
   // ensure a minimum visible alpha so points remain seen at closest zooms
-  a = max(a, uMinOpacity * opacity);
+  a = max(a, uMinOpacity * opacity * 0.6);
       gl_FragColor = vec4(tex.rgb * tint, a);
     }
   `
@@ -142,6 +156,90 @@ export function init(container) {
   const stars = new THREE.Points(geom, starMat)
   resources.objects.push(stars)
   scene.add(stars)
+
+  // Background base stars (outside the galaxy cloud) with per-star opacity
+  // increase background star count for a denser scattered background
+  const baseStarCount = 40000
+  const bpos = new Float32Array(baseStarCount * 3)
+  const balpha = new Float32Array(baseStarCount)
+  const bsize = new Float32Array(baseStarCount)
+  // per-star random value for varying opacity and twinkle
+  const brand = new Float32Array(baseStarCount)
+  for (let i = 0; i < baseStarCount; i++) {
+    const phi = Math.acos(2 * Math.random() - 1)
+    const theta = 2 * Math.PI * Math.random()
+  // place these further out so they sit outside the central galaxy/cloud
+  // but keep them inside the camera frustum (camera.far = 5000) so they are visible
+  // choose radius around 2000..4800 so some stars sit closer to the nebula edge and avoid a visible empty ring
+  const r = 2000 + Math.random() * 2800
+    bpos[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+    bpos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+    bpos[i * 3 + 2] = r * Math.cos(phi)
+    // per-star alpha for opacity variety (base visibility)
+    // increase alpha range so background stars become more noticeable
+    balpha[i] = 0.18 + Math.random() * 0.6 // ~0.18 .. 0.78
+    // increase base size slightly so background stars read better
+    bsize[i] = 1.0 + Math.random() * 2.6
+    // random factor used for per-star twinkle and base scaling
+    brand[i] = Math.random()
+  }
+  const bgeom = new THREE.BufferGeometry()
+  bgeom.setAttribute('position', new THREE.BufferAttribute(bpos, 3))
+  bgeom.setAttribute('aAlpha', new THREE.BufferAttribute(balpha, 1))
+  bgeom.setAttribute('aRandom', new THREE.BufferAttribute(brand, 1))
+  bgeom.setAttribute('aSize', new THREE.BufferAttribute(bsize, 1))
+  resources.geometries.push(bgeom)
+  const baseTex = createSprite(48, '#ffffff')
+  // simple shader to respect per-star alpha and slow modulation
+  const baseVert = `
+    attribute float aAlpha;
+    attribute float aSize;
+    attribute float aRandom;
+    uniform float uTime;
+    varying float vAlpha;
+    varying float vRand;
+    void main() {
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      float dist = length(mvPos.xyz) + 0.0001;
+      float scale = clamp(180.0 / dist, 0.4, 8.0);
+      // per-star slow twinkle driven by aRandom (gives different freq/phase per star)
+      float twFreq = 0.02 + aRandom * 0.08;
+      float phase = aRandom * 6.28318530718;
+      float mod = 0.85 + 0.34 * sin(uTime * twFreq + phase);
+      // vary base alpha per-star so some stars are intrinsically dimmer/brighter
+      float baseScale = 0.6 + aRandom * 1.0;
+      vRand = aRandom;
+      vAlpha = aAlpha * baseScale * mod;
+      gl_Position = projectionMatrix * mvPos;
+      gl_PointSize = aSize * scale;
+    }
+  `
+  const baseFrag = `
+    uniform sampler2D map;
+    uniform float opacity;
+    varying float vAlpha;
+    varying float vRand;
+    void main() {
+      vec4 tex = texture2D(map, gl_PointCoord);
+      // force white color for background stars and use per-star alpha
+      // apply per-star computed alpha (vAlpha) and global opacity
+      float a = tex.a * vAlpha * opacity;
+      gl_FragColor = vec4(vec3(1.0), a);
+    }
+  `
+  // Increase default opacity so base stars are more visible while remaining slightly translucent
+  const baseMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, map: { value: baseTex }, opacity: { value: 0.9 } },
+    vertexShader: baseVert,
+    fragmentShader: baseFrag,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending
+  })
+  resources.materials.push(baseMat, baseTex)
+  const baseStars = new THREE.Points(bgeom, baseMat)
+  resources.objects.push(baseStars)
+  scene.add(baseStars)
 
   // Galaxy cloud: generate a spindle / band-shaped distribution
   // Galaxy cloud: larger, smoother spindle without hard edge
@@ -598,32 +696,38 @@ export function init(container) {
     resources.objects.push(m)
   }
 
+  // performance: maintain a small frame counter and update heavy uniforms in groups
+  let __frameCounter = 0
+  // collect materials that need fast per-frame uTime updates (keeps twinkle smooth)
+  const __fastTimeMats = []
+  // collect materials that can be updated less frequently
+  const __slowTimeMats = []
+  // populate lists if materials exist
+  if (stars && stars.material) __fastTimeMats.push(stars.material)
+  if (baseStars && baseStars.material) __fastTimeMats.push(baseStars.material)
+  if (cloud && cloud.material) __slowTimeMats.push(cloud.material)
+  if (microCloud && microCloud.material) __slowTimeMats.push(microCloud.material)
+  if (typeof microCore !== 'undefined' && microCore && microCore.material) __slowTimeMats.push(microCore.material)
+  if (typeof filament !== 'undefined' && filament && filament.material) __slowTimeMats.push(filament.material)
+
   function animate() {
     controls.update()
-    // update shader time uniform for subtle twinkle/flicker
     const t = performance.now() * 0.001
-    try {
-      if (stars.material && stars.material.uniforms && stars.material.uniforms.uTime) stars.material.uniforms.uTime.value = t
-    } catch (e) {}
-    try {
-      if (cloud.material && cloud.material.uniforms && cloud.material.uniforms.uTime) cloud.material.uniforms.uTime.value = t
-    } catch (e) {}
-    try {
-      if (microCloud.material && microCloud.material.uniforms && microCloud.material.uniforms.uTime) microCloud.material.uniforms.uTime.value = t
-    } catch (e) {}
-    try {
-      if (typeof filament !== 'undefined' && filament.material && filament.material.uniforms && filament.material.uniforms.uTime) filament.material.uniforms.uTime.value = t
-    } catch (e) {}
-    // update camera position uniforms for near-boosting cloud layers
-    try {
-      if (cloud.material && cloud.material.uniforms && cloud.material.uniforms.uCameraPos) cloud.material.uniforms.uCameraPos.value.copy(camera.position)
-    } catch (e) {}
-    try {
-      if (microCloud.material && microCloud.material.uniforms && microCloud.material.uniforms.uCameraPos) microCloud.material.uniforms.uCameraPos.value.copy(camera.position)
-    } catch (e) {}
-    try {
-      if (typeof microCore !== 'undefined' && microCore.material && microCore.material.uniforms && microCore.material.uniforms.uCameraPos) microCore.material.uniforms.uCameraPos.value.copy(camera.position)
-    } catch (e) {}
+    __frameCounter++
+    // update fast materials every frame for smooth twinkle
+    for (let m of __fastTimeMats) {
+      if (m && m.uniforms && m.uniforms.uTime) m.uniforms.uTime.value = t
+    }
+    // update slow materials less frequently to save CPU/GPU work
+    if (__frameCounter % 3 === 0) {
+      for (let m of __slowTimeMats) {
+        if (m && m.uniforms && m.uniforms.uTime) m.uniforms.uTime.value = t
+      }
+      // update camera-dependent uniforms less frequently (near-boost computations)
+      if (cloud && cloud.material && cloud.material.uniforms && cloud.material.uniforms.uCameraPos) cloud.material.uniforms.uCameraPos.value.copy(camera.position)
+      if (microCloud && microCloud.material && microCloud.material.uniforms && microCloud.material.uniforms.uCameraPos) microCloud.material.uniforms.uCameraPos.value.copy(camera.position)
+      if (typeof microCore !== 'undefined' && microCore && microCore.material && microCore.material.uniforms && microCore.material.uniforms.uCameraPos) microCore.material.uniforms.uCameraPos.value.copy(camera.position)
+    }
     // much slower rotation to make the galaxy feel tranquil
     cloudGroup.rotation.y += 0.00028
     cloudGroup.rotation.x += 0.00003

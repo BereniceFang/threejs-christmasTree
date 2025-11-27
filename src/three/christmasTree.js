@@ -25,6 +25,7 @@ export class ChristmasTree {
     this.starParticles = null // 添加星星粒子系统
     this.ground = null
     this.fallingStars = []
+  this.snowParticles = null
     this.lastStarTime = 0 // 用于控制星星生成频率
 
     // 创建圆形粒子纹理
@@ -37,6 +38,61 @@ export class ChristmasTree {
     this.createGround()
     this.createSnow()
     this.loadStar()
+  }
+
+  /**
+   * 创建雪花粒子系统（使用 Points）
+   */
+  createSnow() {
+    const old = this.scene.children.find((c) => c.name === 'snowParticles')
+    if (old) this.scene.remove(old)
+
+  // allow optional override via params.雪花密度, otherwise scale with tree particle count
+  const defaultCount = Math.max(400, Math.floor((this.params && this.params.粒子数量) ? this.params.粒子数量 / 6 : 800))
+  const count = (this.params && typeof this.params.雪花密度 === 'number') ? Math.max(200, Math.floor(this.params.雪花密度)) : Math.max(800, defaultCount * 2)
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(count * 3)
+    const velocities = new Float32Array(count * 3)
+    const sizes = new Float32Array(count)
+
+    const hw = (this.params && this.params.树宽) ? this.params.树宽 : 4
+    const hh = (this.params && this.params.树高) ? this.params.树高 : 12
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3
+      // distribute snow above the tree and across scene
+      positions[i3] = (Math.random() - 0.5) * hw * 6
+      positions[i3 + 1] = hh * 0.6 + Math.random() * hh * 1.4 + 2
+      positions[i3 + 2] = (Math.random() - 0.5) * hw * 6
+
+  // downward speed and stronger horizontal drift for heavier snow
+  velocities[i3] = (Math.random() - 0.5) * 0.25
+  velocities[i3 + 1] = - (0.4 + Math.random() * 1.0)
+  velocities[i3 + 2] = (Math.random() - 0.5) * 0.25
+
+  // larger, more varied snowflake sizes
+  sizes[i] = 0.08 + Math.random() * 0.22
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3))
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.12,
+      map: this.particleTexture,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      sizeAttenuation: true
+    })
+
+    const points = new THREE.Points(geometry, material)
+    points.name = 'snowParticles'
+    this.snowParticles = { points, count }
+    this.scene.add(points)
   }
 
   /**
@@ -314,84 +370,18 @@ export class ChristmasTree {
   }
 
   /**
-   * 创建雪花粒子系统
-   */
-  createSnow() {
-    // 如果已有雪粒子，先移除
-    const old = this.scene.children.find((c) => c.name === 'snow')
-    if (old) this.scene.remove(old)
-
-    const snowCount = 800
-    const geometry = new THREE.BufferGeometry()
-    const positions = new Float32Array(snowCount * 3)
-
-    // 存储每个雪花的下落速度与抖动幅度（CPU 更新）
-    this.snowSpeeds = new Float32Array(snowCount)
-    this.snowDrifts = new Float32Array(snowCount)
-
-    for (let i = 0; i < snowCount; i++) {
-      const i3 = i * 3
-      // 在场景上方随机散布 (范围可根据场景缩放调整)
-      positions[i3] = (Math.random() - 0.5) * 20
-      positions[i3 + 1] = Math.random() * 10 + 2
-      positions[i3 + 2] = (Math.random() - 0.5) * 20
-
-      // 下落速度与水平抖动幅度
-      this.snowSpeeds[i] = 0.01 + Math.random() * 0.06
-      this.snowDrifts[i] = Math.random() * 0.02
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-
-    const material = new THREE.PointsMaterial({
-      size: 0.12,
-      map: this.particleTexture,
-      transparent: true,
-      opacity: 0.95,
-      color: 0xffffff,
-      depthWrite: false,
-      blending: THREE.NormalBlending
-    })
-
-    this.snowParticles = new THREE.Points(geometry, material)
-    this.snowParticles.name = 'snow'
-    this.scene.add(this.snowParticles)
-  }
-
-  /**
-   * 更新雪花位置（简单 CPU 逐帧更新）
-   */
-  updateSnow() {
-    if (!this.snowParticles) return
-
-    const positions = this.snowParticles.geometry.attributes.position.array
-    const count = positions.length / 3
-
-    for (let i = 0; i < count; i++) {
-      const i3 = i * 3
-
-      // 垂直下落
-      positions[i3 + 1] -= this.snowSpeeds[i]
-
-      // 水平随时间轻微摆动
-      positions[i3] += Math.sin(this.time * 0.5 + i) * this.snowDrifts[i]
-      positions[i3 + 2] += Math.cos(this.time * 0.45 + i * 0.7) * this.snowDrifts[i] * 0.6
-
-      // 重置到顶部
-      if (positions[i3 + 1] < -0.5) {
-        positions[i3] = (Math.random() - 0.5) * 20
-        positions[i3 + 1] = Math.random() * 6 + 6
-        positions[i3 + 2] = (Math.random() - 0.5) * 20
-      }
-    }
-
-    this.snowParticles.geometry.attributes.position.needsUpdate = true
-  }
-
-  /**
    * 创建一个新的落下的星星
    */
   createFallingStar() {
+    // Disabled: remove falling yellow light points. Clear any existing ones and no-op.
+    if (this.fallingStars && this.fallingStars.length) {
+      for (const s of this.fallingStars) {
+        try { this.scene.remove(s) } catch (e) {}
+      }
+      this.fallingStars = []
+    }
+    return
+
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(1 * 3)
     const scales = new Float32Array(1)
@@ -468,31 +458,43 @@ export class ChristmasTree {
       this.starParticles.rotation.y -= this.params.旋转速度 * 0.5
     }
 
-    // 每隔一定时间创建新的星星
-    // if (this.time - this.lastStarTime > 0.1) {
-    //   // 每0.1秒创建一个新星星，增加生成频率
-    //   this.createFallingStar()
-    //   this.lastStarTime = this.time
-    // }
+    // falling stars disabled: ensure array is cleared
+    if (this.fallingStars && this.fallingStars.length) {
+      for (const s of this.fallingStars) {
+        try { this.scene.remove(s) } catch (e) {}
+      }
+      this.fallingStars = []
+    }
 
-    // 更新落下的星星
-    // this.fallingStars = this.fallingStars.filter((star) => {
-    //   if (!star.material.uniforms) return false
+    // 更新雪花位置（简单物理：速度叠加位置，超出下方则重置到上方）
+    if (this.snowParticles && this.snowParticles.points) {
+      const pts = this.snowParticles.points
+      const posAttr = pts.geometry.attributes.position
+      const velAttr = pts.geometry.attributes.velocity
+      const count = this.snowParticles.count
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3
+        // update
+        posAttr.array[i3] += velAttr.array[i3] * 0.016
+        posAttr.array[i3 + 1] += velAttr.array[i3 + 1] * 0.016
+        posAttr.array[i3 + 2] += velAttr.array[i3 + 2] * 0.016
 
-    //   const lifetime = this.time - star.startTime
-    //   star.material.uniforms.time.value = this.time
-    //   star.geometry.attributes.lifetime.array[0] = lifetime
-    //   star.geometry.attributes.lifetime.needsUpdate = true
+        // slight horizontal drift randomization
+        velAttr.array[i3] += (Math.random() - 0.5) * 0.002
+        velAttr.array[i3 + 2] += (Math.random() - 0.5) * 0.002
 
-    //   // 如果生命周期超过4秒，移除星星
-    //   if (lifetime > 6.0) {
-    //     this.scene.remove(star)
-    //     return false
-    //   }
-    //   return true
-    // })
-
-    // 更新雪花
-    this.updateSnow()
+        // if below ground, reset to above
+        if (posAttr.array[i3 + 1] < -1.0) {
+          posAttr.array[i3] = (Math.random() - 0.5) * (this.params.树宽 * 6)
+          posAttr.array[i3 + 1] = (this.params.树高 * 0.6) + Math.random() * this.params.树高 * 1.4 + 2
+          posAttr.array[i3 + 2] = (Math.random() - 0.5) * (this.params.树宽 * 6)
+          velAttr.array[i3] = (Math.random() - 0.5) * 0.1
+          velAttr.array[i3 + 1] = - (0.2 + Math.random() * 0.6)
+          velAttr.array[i3 + 2] = (Math.random() - 0.5) * 0.1
+        }
+      }
+      posAttr.needsUpdate = true
+      velAttr.needsUpdate = true
+    }
   }
 }

@@ -256,11 +256,14 @@ function explodeClover(position, color, count) {
   const startDiameterPx = 50 // initial small diameter
   const targetDiameterPx = rand(300, 900) // random final diameter (reduced to make clover smaller)
   const baseRadius = targetDiameterPx / 2
-  const perPetal = Math.max(64, Math.floor(count / 4))
+  // Reduce per-petal sample density so the contour doesn't look like a continuous line.
+  // Use fewer samples but add a small perpendicular jitter to give the contour some thickness.
+  const perPetal = Math.max(12, Math.floor(count / 10))
   const samples = perPetal * 4
   // sample heart curve densely and compute cumulative arc length
   const pts = []
-  const N = 2048
+  // sample the heart curve at moderate resolution and then resample by arc-length
+  const N = 1024
   for (let i = 0; i < N; i++) {
     const t = (i / N) * Math.PI * 2
     const hx = 16 * Math.pow(Math.sin(t), 3)
@@ -323,9 +326,9 @@ function explodeClover(position, color, count) {
       }
     }
   }
-  // Sample the full heart contour evenly by arc-length.
+  // Sample the full heart contour evenly by arc-length but at reduced density.
   const contourSamples = []
-  const totalSamples = Math.max(256, perPetal * 2)
+  const totalSamples = Math.max(64, perPetal * 1)
   for (let i = 0; i < totalSamples; i++) {
     const s = (i + 0.5) * (totalLen / totalSamples)
     contourSamples.push(pointAt(s))
@@ -342,25 +345,42 @@ function explodeClover(position, color, count) {
   // Create 4 identical hearts by translating so the tip is at the center, then rotating for each quadrant.
   // pick a random final scale factor (reduced) to limit maximum size while keeping randomness
   const finalScaleFactor = rand(0.15, 0.18) // reduced max size to shrink clover overall
+  // For each petal, create fewer particles and add a small perpendicular jitter to each
+  // sample so the contour appears with thickness instead of a single-pixel line.
   for (let pet = 0; pet < 4; pet++) {
-    // rotate so that hearts point: pet=0 top (no rotation), pet=1 right, pet=2 bottom, pet=3 left
     const baseAngle = - pet * Math.PI / 2
     const cosA = Math.cos(baseAngle), sinA = Math.sin(baseAngle)
     for (let i = 0; i < contourSamples.length; i++) {
-      // shift sample so heart's tip maps to origin
+      // shift sample so heart's tip maps to origin and rotate to petal orientation
       const raw = contourSamples[i].clone()
       const shifted = raw.clone().sub(tipVec)
-      // rotate around origin
       const rx = shifted.x * cosA - shifted.y * sinA
       const ry = shifted.x * sinA + shifted.y * cosA
       const rel = new THREE.Vector3(rx, ry, 0)
+
+      // compute a small perpendicular jitter in heart-space to give contour thickness
+      // tangent approximation: small offset along curve
+      const ds = totalLen / (totalSamples * 8 + 1)
+      const forward = pointAt(((i + 1) + 0.5) * (totalLen / totalSamples))
+      const backward = pointAt(((i - 1 + totalSamples) + 0.5) * (totalLen / totalSamples))
+      const tang = forward.clone().sub(backward)
+      // perpendicular (normal) in 2D
+      const norm = new THREE.Vector3(-tang.y, tang.x, 0).normalize()
+      // jitter amount in pixels scaled to the target diameter - small value so petals stay crisp
+      const jitterPx = rand(-6, 6)
+      const jitter = norm.multiplyScalar(jitterPx * (baseRadius / targetDiameterPx) * 2)
+      rel.add(jitter)
+
       const initialPos = new THREE.Vector3(position.x, position.y, 0).add(rel.clone().multiplyScalar(startScale))
-  const p = new FireworkParticle(initialPos, color, { size: rand(2,5), life: growthDuration + lifeExtra, speed: 0 })
+      // slightly smaller sizes and small per-particle scale variance
+      const pSize = rand(1.5, 3.2)
+      const p = new FireworkParticle(initialPos, color, { size: pSize, life: growthDuration + lifeExtra, speed: 0 })
       p.isClover = true
       p.center = position.clone()
       p.rel = rel.clone()
-  p.startScale = startScale
-  p.targetScale = finalScaleFactor
+      p.startScale = startScale
+      // give each particle tiny variation in final scale so the edge looks organic
+      p.targetScale = finalScaleFactor * rand(0.92, 1.12)
       p.growthDuration = growthDuration
       p.cloverFallSpeed = 30
       particles.push(p)
@@ -463,7 +483,7 @@ function startShow() {
   spawnInterval = setInterval(() => {
     const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
     // ~1.5% chance to auto-trigger the pale-green clover easter-egg
-    if (Math.random() < 0.03) {
+    if (Math.random() < 0.05) {
       launchClover()
     } else {
       launchRocket(x)
