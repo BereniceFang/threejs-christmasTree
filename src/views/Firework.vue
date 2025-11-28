@@ -3,8 +3,10 @@
     <div class="ui">
         <button @click="startShow">开始烟花</button>
         <button @click="stopShow">停止</button>
-        <button @click="launchBicolorManual">双色烟花</button>
+    <button @click="launchPompomManual">花球烟花</button>
     </div>
+    <!-- castle image positioned at center-bottom so fireworks appear above it -->
+    <img src="/src/assets/castle.webp" class="foreground-castle" alt="castle" />
   </div>
 </template>
 
@@ -75,7 +77,7 @@ class FireworkParticle {
   // normal particle defaults
     this.geometry = new THREE.BufferGeometry()
     this.material = new THREE.PointsMaterial({
-      size: opts.size ?? 4,
+      size: opts.size ?? 6.4,
       color: this.color,
       map: circleTexture,
       transparent: true,
@@ -167,7 +169,7 @@ class TrailParticle {
     this.color = color.clone().multiplyScalar(0.8)
     this.geometry = new THREE.BufferGeometry()
     this.material = new THREE.PointsMaterial({
-      size: 2,
+      size: 3.2,
       color: this.color,
       map: circleTexture,
       transparent: true,
@@ -212,7 +214,7 @@ class Rocket {
     this.alive = true
     this.geometry = new THREE.BufferGeometry()
     this.material = new THREE.PointsMaterial({
-      size: 6,
+      size: 9.6,
       color: this.color,
       map: circleTexture,
       transparent: true,
@@ -276,8 +278,12 @@ function explode(position, color, shape = null) {
     explodeBicolor(position, color, count)
     return
   }
+  if (shape === 'pompom') {
+    explodePompom(position, color, count)
+    return
+  }
   for (let i = 0; i < count; i++) {
-    const p = new FireworkParticle(position, color, { size: rand(2,5), life: rand(1.0, 3.2), speed: rand(80, 520) })
+    const p = new FireworkParticle(position, color, { size: rand(3.2,8), life: rand(1.0, 3.2), speed: rand(80, 520) })
     particles.push(p)
   }
 }
@@ -404,7 +410,7 @@ function explodeClover(position, color, count) {
 
       const initialPos = new THREE.Vector3(position.x, position.y, 0).add(rel.clone().multiplyScalar(startScale))
       // slightly smaller sizes and small per-particle scale variance
-      const pSize = rand(1.5, 3.2)
+  const pSize = rand(2.4, 5.12)
       const p = new FireworkParticle(initialPos, color, { size: pSize, life: growthDuration + lifeExtra, speed: 0 })
       p.isClover = true
       p.center = position.clone()
@@ -445,7 +451,7 @@ function explodeBicolor(position, color, count) {
   for (let i = 0; i < innerCount; i++) {
     const speed = rand(5, 60)
     const life = rand(0.6, 1.2)
-    const size = rand(1.6, 2.8)
+  const size = rand(2.56, 4.48)
     const p = new FireworkParticle(position, innerColor, { size, life, speed })
     particles.push(p)
   }
@@ -462,7 +468,7 @@ function explodeBicolor(position, color, count) {
       // reduce speed & size roughly by half to shrink overall visual scale
       const speed = rand(120, 390)
       const life = rand(0.45, 0.9)
-      const size = rand(0.6, 1.3)
+  const size = rand(0.96, 2.08)
       const p = new FireworkParticle(position, outerColor, { size, life, speed, dir, makeTrail: true })
       particles.push(p)
     }
@@ -482,6 +488,44 @@ function launchBicolor(x) {
   const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
   const baseColor = pal[0].clone()
   const r = new Rocket(x, { color: baseColor, shape: 'bicolor' })
+  rockets.push(r)
+}
+
+function explodePompom(position, color, count) {
+  // Pompom: lots of radial spikes with slightly tapered ends. We'll create
+  // N spikes and along each spike spawn a few particles with decreasing size.
+  const spikeCount = Math.max(24, Math.floor(count / 8))
+  const perSpike = Math.max(6, Math.floor(count / spikeCount))
+  // pick palette (use existing palettes for variety)
+  const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+  const core = pal[0].clone().multiplyScalar(1.4)
+  const tip = pal[1].clone()
+  try { localFlash(position, core, Math.min(0.92, 0.18 + count / 480), 200, count) } catch(e) {}
+
+  for (let s = 0; s < spikeCount; s++) {
+    const angle = (s / spikeCount) * Math.PI * 2 + rand(-0.03, 0.03)
+    // slight curvature factor so spikes are not perfectly straight
+    const curve = rand(-0.06, 0.06)
+    for (let j = 0; j < perSpike; j++) {
+      const frac = (j + rand(0,0.6)) / perSpike
+      const dist = frac * rand(180, 420) * 0.6 // control overall size
+      const dir = new THREE.Vector3(Math.cos(angle + curve * frac), Math.sin(angle + curve * frac), rand(-0.03, 0.03)).normalize()
+      const speed = dist * rand(0.8, 1.3)
+      const life = Math.max(0.4, frac * 1.6)
+  const size = Math.max(0.96, (1 - frac) * rand(2.56, 5.12))
+      // color interpolation: near root use core, towards tip use tip color
+      const c = core.clone().lerp(tip, frac * 0.9)
+      const p = new FireworkParticle(position, c, { size, life, speed, dir, makeTrail: true })
+      particles.push(p)
+    }
+  }
+}
+
+function launchPompomManual() {
+  const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
+  const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+  const baseColor = pal[0].clone()
+  const r = new Rocket(x, { color: baseColor, shape: 'pompom' })
   rockets.push(r)
 }
 
@@ -583,14 +627,17 @@ function startShow() {
     if (r < 0.3) {
       // 30% chance: bicolor
       launchBicolor(x)
-    } else if (r < 0.35) {
-      // 5% chance: clover
+    } else if (r < 0.42) {
+      // 12% chance: pompom
+      launchPompomManual()
+    } else if (r < 0.45) {
+      // 3% chance: clover
       launchClover()
     } else {
       // otherwise normal rocket
       launchRocket(x)
     }
-  }, 700)
+  }, 400)
 }
 
 function stopShow() {
@@ -638,8 +685,18 @@ function onResize() {
 </script>
 
 <style scoped>
-.firework-root{position:fixed;inset:0;background: radial-gradient(ellipse at bottom, #050217 0%, #000 60%);overflow:hidden}
-.firework-root .ui{position:fixed;left:18px;top:18px;display:flex;gap:8px}
+.firework-root{position:fixed;inset:0;/* linear top->bottom darker gradient: black -> deep blue -> purple -> pink */
+  background: linear-gradient(180deg,
+    rgba(2,2,8,1) 0%,       /* near-black at very top */
+    rgba(6,12,36,1) 28%,    /* deep navy */
+    rgba(36,8,64,1) 60%,    /* deep purple */
+    rgba(76,24,84,1) 78%,   /* slightly deeper purple for smoother transition */
+    rgba(220,110,170,0.55) 100% /* desaturated, more transparent night pink at bottom */
+  );
+  overflow:hidden;
+}
+.firework-root .ui{position:fixed;left:18px;top:18px;display:flex;gap:8px;z-index:30}
 .firework-root button{padding:8px 12px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:#fff;backdrop-filter: blur(6px);cursor:pointer}
-.flash-spot{position:absolute;border-radius:999px;mix-blend-mode:screen;filter:blur(10px);pointer-events:none;will-change:opacity,transform}
+.flash-spot{position:absolute;border-radius:999px;mix-blend-mode:screen;filter:blur(10px);pointer-events:none;will-change:opacity,transform;z-index:20}
+.foreground-castle{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:36%;max-width:820px;opacity:0.98;pointer-events:none;filter:drop-shadow(0 18px 28px rgba(0,0,0,0.7));z-index:25}
 </style>
