@@ -1,9 +1,8 @@
 <template>
   <div class="firework-root" ref="container">
     <div class="ui">
-        <button @click="startShow">开始烟花</button>
-        <button @click="stopShow">停止</button>
-    <button @click="launchPompomManual">花球烟花</button>
+      <button @click="startShow">开始烟花</button>
+      <button @click="stopShow">停止</button>
     </div>
     <!-- castle image positioned at center-bottom so fireworks appear above it -->
     <img src="/src/assets/castle.webp" class="foreground-castle" alt="castle" />
@@ -31,6 +30,28 @@ const BI_COLOR_PALETTES = [
 ]
 
 function rand(min, max) { return Math.random() * (max - min) + min }
+// global particle scale multiplier for easy tuning
+const PARTICLE_SCALE = 1.3
+// normal (non-special) particle size factor (shrink ordinary fireworks)
+const NORMAL_SIZE_FACTOR = 0.7
+// choose an explosion Y coordinate adapted to current viewport height
+// probabilities: low ~20%, mid ~55% (slightly higher), high ~25%
+function pickExplosionY() {
+  const h = window.innerHeight
+  const r = Math.random()
+  let frac
+  if (r < 0.20) {
+    // low band (below center)
+    frac = rand(0.18, 0.36)
+  } else if (r < 0.75) {
+    // mid band (around center) - slightly higher probability
+    frac = rand(0.44, 0.56)
+  } else {
+    // high band (above center)
+    frac = rand(0.66, 0.9)
+  }
+  return -h/2 + frac * h
+}
 // create a circular texture for particles
 let circleTexture = null
 function createCircleTexture() {
@@ -50,6 +71,9 @@ function createCircleTexture() {
   ctx.fillRect(0,0,size,size)
   return new THREE.CanvasTexture(canvas)
 }
+
+// create a soft elliptical fluff texture for dandelion particles
+// fluff texture removed (dandelion feature disabled)
 
 class FireworkParticle {
   constructor(pos, color, opts = {}) {
@@ -77,9 +101,10 @@ class FireworkParticle {
   // normal particle defaults
     this.geometry = new THREE.BufferGeometry()
     this.material = new THREE.PointsMaterial({
-      size: opts.size ?? 6.4,
+      // if caller provided size use it; otherwise use a reduced base size for ordinary particles
+      size: ((typeof opts.size !== 'undefined') ? opts.size : 6.4 * NORMAL_SIZE_FACTOR) * PARTICLE_SCALE,
       color: this.color,
-      map: circleTexture,
+      map: opts.map || circleTexture,
       transparent: true,
       opacity: 1,
       depthWrite: false,
@@ -128,6 +153,8 @@ class FireworkParticle {
       return true
     }
 
+    // (dandelion feature removed)
+
     // physics-driven particle behavior
     this.velocity.y -= 200 * dt
     this.velocity.multiplyScalar(0.995)
@@ -168,12 +195,15 @@ class TrailParticle {
     this.age = 0
     this.color = color.clone().multiplyScalar(0.8)
     this.geometry = new THREE.BufferGeometry()
+    const tSize = (arguments[1] && arguments[1].size) || 3.2 * PARTICLE_SCALE
+    const tOpacity = (arguments[1] && arguments[1].opacity) || 0.8
+    const tMap = (arguments[1] && arguments[1].map) || circleTexture
     this.material = new THREE.PointsMaterial({
-      size: 3.2,
+      size: tSize,
       color: this.color,
-      map: circleTexture,
+      map: tMap,
       transparent: true,
-      opacity: 0.8,
+      opacity: tOpacity,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: false,
@@ -212,9 +242,11 @@ class Rocket {
     this.color = opts.color ?? new THREE.Color().setHSL(Math.random(), 0.85, 0.45)
     this.shape = opts.shape || null
     this.alive = true
+    // pick a target height for this rocket to explode at (viewport-adaptive)
+    this.targetY = typeof opts.targetY === 'number' ? opts.targetY : pickExplosionY()
     this.geometry = new THREE.BufferGeometry()
     this.material = new THREE.PointsMaterial({
-      size: 9.6,
+      size: 9.6 * PARTICLE_SCALE,
       color: this.color,
       map: circleTexture,
       transparent: true,
@@ -249,8 +281,8 @@ class Rocket {
       particles.push(t) // reuse particles array for easy update
     }
 
-    if (this.velocity.y < 200) {
-      // explode with increased, randomized count
+    // explode when reaching targetY (height) or if velocity drops too low as a fallback
+    if (this.position.y >= this.targetY || this.velocity.y < 200) {
       this.alive = false
       explode(this.position, this.color, this.shape)
       scene.remove(this.points)
@@ -283,7 +315,7 @@ function explode(position, color, shape = null) {
     return
   }
   for (let i = 0; i < count; i++) {
-    const p = new FireworkParticle(position, color, { size: rand(3.2,8), life: rand(1.0, 3.2), speed: rand(80, 520) })
+    const p = new FireworkParticle(position, color, { size: rand(3.2,8) * NORMAL_SIZE_FACTOR * PARTICLE_SCALE, life: rand(1.0, 3.2), speed: rand(80, 520) })
     particles.push(p)
   }
 }
@@ -410,7 +442,7 @@ function explodeClover(position, color, count) {
 
       const initialPos = new THREE.Vector3(position.x, position.y, 0).add(rel.clone().multiplyScalar(startScale))
       // slightly smaller sizes and small per-particle scale variance
-  const pSize = rand(2.4, 5.12)
+  const pSize = rand(2.4, 5.12) * PARTICLE_SCALE
       const p = new FireworkParticle(initialPos, color, { size: pSize, life: growthDuration + lifeExtra, speed: 0 })
       p.isClover = true
       p.center = position.clone()
@@ -451,7 +483,7 @@ function explodeBicolor(position, color, count) {
   for (let i = 0; i < innerCount; i++) {
     const speed = rand(5, 60)
     const life = rand(0.6, 1.2)
-  const size = rand(2.56, 4.48)
+  const size = rand(2.56, 4.48) * PARTICLE_SCALE
     const p = new FireworkParticle(position, innerColor, { size, life, speed })
     particles.push(p)
   }
@@ -468,7 +500,7 @@ function explodeBicolor(position, color, count) {
       // reduce speed & size roughly by half to shrink overall visual scale
       const speed = rand(120, 390)
       const life = rand(0.45, 0.9)
-  const size = rand(0.96, 2.08)
+  const size = rand(0.96, 2.08) * PARTICLE_SCALE
       const p = new FireworkParticle(position, outerColor, { size, life, speed, dir, makeTrail: true })
       particles.push(p)
     }
@@ -512,7 +544,7 @@ function explodePompom(position, color, count) {
       const dir = new THREE.Vector3(Math.cos(angle + curve * frac), Math.sin(angle + curve * frac), rand(-0.03, 0.03)).normalize()
       const speed = dist * rand(0.8, 1.3)
       const life = Math.max(0.4, frac * 1.6)
-  const size = Math.max(0.96, (1 - frac) * rand(2.56, 5.12))
+  const size = Math.max(0.96 * PARTICLE_SCALE, (1 - frac) * rand(2.56, 5.12) * PARTICLE_SCALE)
       // color interpolation: near root use core, towards tip use tip color
       const c = core.clone().lerp(tip, frac * 0.9)
       const p = new FireworkParticle(position, c, { size, life, speed, dir, makeTrail: true })
@@ -528,6 +560,63 @@ function launchPompomManual() {
   const r = new Rocket(x, { color: baseColor, shape: 'pompom' })
   rockets.push(r)
 }
+
+// --- 星芒绽放 (starburst) ---
+function explodeStarburst(position) {
+  // starburst lifecycle: particles live 2-3s
+  const life = rand(2.0, 3.0)
+  // 8 rays
+  const rays = 8
+  const particlesPerRay = 28 // keep density but reduce distance
+  const maxDist = rand(220, 380) * 0.5 // spatial scale halved
+  const baseColor = new THREE.Color(0xffffff).multiplyScalar(1.0)
+  // localized flash for perception
+  try { localFlash(position, baseColor, 0.9, 240, particlesPerRay * rays) } catch(e) {}
+
+  for (let r = 0; r < rays; r++) {
+    const angle = (r / rays) * Math.PI * 2
+    // pick a bright palette color for this ray (use BI_COLOR_PALETTES as source)
+    const pal = BI_COLOR_PALETTES[Math.floor(Math.random() * BI_COLOR_PALETTES.length)]
+    const rayColorBase = pal[0].clone().lerp(pal[1], 0.35).multiplyScalar(1.1).clone()
+    for (let i = 0; i < particlesPerRay; i++) {
+      const frac = (i + 1) / particlesPerRay
+      // initial position slightly off center
+      const pos = new THREE.Vector3(position.x, position.y, 0)
+      // direction is along angle with tiny radial noise
+      const dir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).normalize()
+  const speed = rand(maxDist * 2.6, maxDist * 3.6) * (1 - frac) + rand(30,60)
+  // initial size halved
+  // increase size (1.6x) relative to previous half-size
+  const size = rand(1.2, 2.6) * PARTICLE_SCALE * 0.5 * 1.6
+  // slightly vary per-particle color around ray base
+  const particleColor = rayColorBase.clone()
+  particleColor.offsetHSL(rand(-0.03, 0.03), rand(-0.06, 0.06), rand(-0.06, 0.06))
+  const p = new FireworkParticle(pos, particleColor, { size, life, speed, dir })
+      // mark as star ray particle so update applies the special behavior
+      p.isStarRay = true
+      p.starFrac = frac
+      p.starMaxDist = maxDist
+  // higher peak brightness (randomized a bit)
+  p.starPeakBright = rand(1.3, 1.8)
+      // start dim (we will brighten to 120% then fade)
+      p.material.opacity = 0.0
+      // ensure trail is not spawned for these particles
+      p.makeTrail = false
+      particles.push(p)
+    }
+  }
+}
+
+function launchStarburstManual() {
+  const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
+  const pos = new THREE.Vector3(x, pickExplosionY(), 0)
+  // simulate a fast ascent rocket: call localFlash and then explodeStarburst after short delay
+  localFlash(pos, new THREE.Color(0xffffff), 0.7, 140, 80)
+  setTimeout(() => { explodeStarburst(pos) }, 520) // match ~0.5s ascent
+}
+
+// --- 蒲公英飘散 (dandelion) ---
+// explodeDandelion & launchDandelionManual removed (feature disabled)
 
 // end explode
 
@@ -624,14 +713,17 @@ function startShow() {
   spawnInterval = setInterval(() => {
     const x = rand(-window.innerWidth/2 + 50, window.innerWidth/2 - 50)
     const r = Math.random()
-    if (r < 0.3) {
-      // 30% chance: bicolor
+    if (r < 0.24) {
+      // ~24% chance: bicolor
       launchBicolor(x)
-    } else if (r < 0.42) {
-      // 12% chance: pompom
+    } else if (r < 0.36) {
+      // ~12% chance: pompom
       launchPompomManual()
+    } else if (r < 0.42) {
+      // ~6% chance: starburst
+      launchStarburstManual()
     } else if (r < 0.45) {
-      // 3% chance: clover
+      // ~3% chance: clover
       launchClover()
     } else {
       // otherwise normal rocket
@@ -687,11 +779,11 @@ function onResize() {
 <style scoped>
 .firework-root{position:fixed;inset:0;/* linear top->bottom darker gradient: black -> deep blue -> purple -> pink */
   background: linear-gradient(180deg,
-    rgba(2,2,8,1) 0%,       /* near-black at very top */
-    rgba(6,12,36,1) 28%,    /* deep navy */
-    rgba(36,8,64,1) 60%,    /* deep purple */
-    rgba(76,24,84,1) 78%,   /* slightly deeper purple for smoother transition */
-    rgba(220,110,170,0.55) 100% /* desaturated, more transparent night pink at bottom */
+    rgba(0,0,6,1) 0%,        /* slightly darker top */
+    rgba(4,8,30,1) 28%,     /* darker deep navy */
+    rgba(30,6,56,1) 60%,    /* deeper purple */
+    rgba(64,20,76,1) 78%,   /* smoother deep purple */
+    rgba(200,100,150,0.45) 100% /* more transparent, slightly darker muted pink */
   );
   overflow:hidden;
 }

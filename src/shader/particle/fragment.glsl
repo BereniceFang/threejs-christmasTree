@@ -32,14 +32,14 @@ void main(){
   float colorTime=time*.5+vScale*5.;
   vec3 rainbowColor=rainbow(colorTime);
   
-  // 增强闪烁效果
-  float sparkle=sin(time*3.+vScale*10.)*.5+.5;
-  sparkle*=sin(time*2.+vScale*5.)*.5+.75;
-  sparkle+=sin(time*8.+vScale*20.)*.25;
+  // 减弱闪烁频率与幅度，让亮度更平稳
+  float slowPulse=sin(time*1.2+vScale*6.28318)*.1;
+  float gentleNoise=sin(time*0.6+vScale*4.)*.03;
+  float sparkle=.05+slowPulse+gentleNoise;
   
   // 组合不同层的发光效果
   float strength=mainGlow*.5+innerGlow*.3+coreGlow*.2;
-  strength*=.6+sparkle*.8;
+  strength*=.7+sparkle*.5;
   
   // 颜色渐变和混合
   vec3 baseColor=mix(color,rainbowColor,.8);
